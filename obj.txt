@@ -1,0 +1,11 @@
+Create a python script that extracts from opensea API
+(link removed)
+
+From a list of projects:
+Extract ids of owners
+Extract transaction history of owners
+Extract transaction history of last 100 sales of the project
+Extract list of nfts of owners and last sellers
+
+Data fromatted as df to extract to csvs
+
