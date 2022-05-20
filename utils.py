@@ -3,7 +3,7 @@ import csv
 from client import ApiClient
 from concurrent.futures import ThreadPoolExecutor
 
-MAX_PARALLEL_REQUESTS = 2
+MAX_PARALLEL_REQUESTS = 10
 
 def get_owners(slug, api_client, limit_requests=1):
     try:

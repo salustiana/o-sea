@@ -1,11 +1,11 @@
 import time
 import requests
-from datetime import datetime
+from ratelimit import limits, sleep_and_retry
 
 class OSAPIError(Exception):
     pass
 
-""" API rate limit: 4/sec """
+""" API rate limit: 4/sec ??????"""
 
 
 class ApiClient:
@@ -19,13 +19,10 @@ class ApiClient:
         self.s.headers.update({"X-API-KEY": self.api_key})
         self.last_req = None
 
+    @sleep_and_retry
+    @limits(calls=4, period=2)
     def _get(self, *args, **kwargs):
-        start = datetime.now()
         r = self.s.get(*args, **kwargs)
-        end = datetime.now()
-        must_wait = 1 - (end - start).total_seconds()
-        if must_wait > 0:
-            time.sleep(must_wait)
         while r.status_code == 429:
             print(f"API returned 429 for {kwargs['url']}. Sleeping for 1 second")
             time.sleep(1)
@@ -77,7 +74,7 @@ class ApiClient:
         }
 
         req_n = 1
-        print(f"Getting owners for {slug}. Request number {req_n}, cursor: {params['cursor']}")
+        print(f"Getting owners for {slug} Request number {req_n} cursor: {params['cursor']}")
         r = self._get(url=self.ASSETS_URL, params=params)
         r_json = r.json()
         params["cursor"] = r_json["next"]
@@ -87,7 +84,7 @@ class ApiClient:
 
         while params["cursor"] and (limit_requests == None or req_n < limit_requests):
             req_n += 1
-            print(f"Getting owners for {slug}. Request number {req_n}, cursor: {params['cursor']}")
+            print(f"Getting owners for {slug} Request number {req_n} cursor: {params['cursor']}")
             try:
                 r = self._get(url=self.ASSETS_URL, params=params)
             except OSAPIError as e:
@@ -116,7 +113,7 @@ class ApiClient:
         }
 
         req_n = 1
-        print(f"Getting transactions for {wallet}. Request number {req_n}, cursor: {params['cursor']}")
+        print(f"Getting transactions for {wallet} Request number {req_n} cursor: {params['cursor']}")
         r = self._get(url=self.EVENTS_URL, params=params)
         r_json = r.json()
         params["cursor"] = r_json["next"]
@@ -128,7 +125,7 @@ class ApiClient:
 
         while params["cursor"] and (limit_requests == None or req_n < limit_requests):
             req_n += 1
-            print(f"Getting transactions for {wallet}. Request number {req_n}, cursor: {params['cursor']}")
+            print(f"Getting transactions for {wallet} Request number {req_n} cursor: {params['cursor']}")
             try:
                 r = self._get(url=self.EVENTS_URL, params=params)
             except OSAPIError as e:
@@ -155,7 +152,7 @@ class ApiClient:
         }
 
         req_n = 1
-        print(f"Getting sales for {slug}. Request number {req_n}, cursor: {params['cursor']}")
+        print(f"Getting sales for {slug} Request number {req_n} cursor: {params['cursor']}")
         r = self._get(url=self.EVENTS_URL, params=params)
         r_json = r.json()
         params["cursor"] = r_json["next"]
@@ -167,7 +164,7 @@ class ApiClient:
 
         while params["cursor"] and (limit_requests == None or req_n < limit_requests):
             req_n += 1
-            print(f"Getting sales for {slug}. Request number {req_n}, cursor: {params['cursor']}")
+            print(f"Getting sales for {slug} Request number {req_n} cursor: {params['cursor']}")
             try:
                 r = self._get(url=self.EVENTS_URL, params=params)
             except OSAPIError as e:
@@ -197,7 +194,7 @@ class ApiClient:
         }
 
         req_n = 1
-        print(f"Getting assets for {wallet}. Request number {req_n}, cursor: {params['cursor']}")
+        print(f"Getting assets for {wallet} Request number {req_n} cursor: {params['cursor']}")
         r = self._get(url=self.ASSETS_URL, params=params)
         r_json = r.json()
         params["cursor"] = r_json["next"]
@@ -215,7 +212,7 @@ class ApiClient:
 
         while params["cursor"] and (limit_requests == None or req_n < limit_requests):
             req_n += 1
-            print(f"Getting assets for {wallet}. Request number {req_n}, cursor: {params['cursor']}")
+            print(f"Getting assets for {wallet} Request number {req_n} cursor: {params['cursor']}")
             try:
                 r = self._get(url=self.ASSETS_URL, params=params)
             except OSAPIError as e:
