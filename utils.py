@@ -3,7 +3,7 @@ import csv
 from client import ApiClient
 from concurrent.futures import ThreadPoolExecutor
 
-MAX_PARALLEL_REQUESTS = 10
+MAX_THREADS = 4
 
 def get_owners(slug, api_client, limit_requests=1):
     try:
@@ -49,22 +49,15 @@ def get_collection_sales(slug, api_client, output_list, limit_requests=1):
     else:
         output_list.extend(col_sales)
 
-def write_transactions_to_file(transactions, path):
-    with open(path, 'w') as f:
-        tr_writer = csv.DictWriter(f, fieldnames=[
-            "asset_url",
-            "contract_address",
-            "token_id",
-            "collection",
-            "seller",
-            "buyer",
-            "price",
-            "coin",
-            "price_usd",
-            "timestamp",
-        ])
-        tr_writer.writeheader()
+def write_transactions_to_file(transactions, path, fieldnames):
+    with open(path, 'a') as f:
+        tr_writer = csv.DictWriter(f, fieldnames=fieldnames)
         tr_writer.writerows(transactions)
+
+def write_nfts_to_file(nfts, path, fieldnames):
+    with open(path, 'a') as f:
+        nft_writer = csv.DictWriter(f, fieldnames=fieldnames)
+        nft_writer.writerows(nfts)
 
 def get_and_write_data(
     api_key,
@@ -104,6 +97,19 @@ def get_and_write_data(
     for slug in slugs:
         os.makedirs(os.path.join(output_dir, slug), exist_ok=True)
 
+        # write csv headers
+        with open(os.path.join(output_dir, slug, 'collection_sales.csv'), 'w') as f:
+            tr_writer = csv.DictWriter(f, fieldnames=api_client.transaction_fields)
+            tr_writer.writeheader()
+
+        with open(os.path.join(output_dir, slug, 'owner_transactions.csv'), 'w') as f:
+            tr_writer = csv.DictWriter(f, fieldnames=api_client.transaction_fields)
+            tr_writer.writeheader()
+
+        with open(os.path.join(output_dir, slug, 'owner_and_seller_nfts.csv'), 'w') as f:
+            nft_writer = csv.DictWriter(f, fieldnames=api_client.nft_fields)
+            nft_writer.writeheader()
+
         # get a list of owners for this collection
         # remove duplicate owners, if any
         col_owners = list(set(get_owners(
@@ -124,6 +130,7 @@ def get_and_write_data(
         write_transactions_to_file(
             transactions=col_sales,
             path=os.path.join(output_dir, slug, 'collection_sales.csv'),
+            fieldnames=api_client.transaction_fields,
         )
 
         # get the sellers from the previous list
@@ -133,7 +140,7 @@ def get_and_write_data(
         # for these sellers and owners,
         # get a list of their nfts
         owner_and_seller_assets = list()
-        with ThreadPoolExecutor(max_workers=MAX_PARALLEL_REQUESTS) as executor:
+        with ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
             for wallet in owners_and_sellers:
                 executor.submit(
                     get_wallet_assets,
@@ -145,21 +152,15 @@ def get_and_write_data(
 
 
         # write those nfts to a csv file
-        with open(
-            os.path.join(output_dir, slug, 'owner_and_seller_nfts.csv'), 'w'
-        ) as f:
-            nft_writer = csv.DictWriter(f, fieldnames=[
-                "contract_address",
-                "token_id",
-                "collection",
-            ])
-
-            nft_writer.writeheader()
-            nft_writer.writerows(owner_and_seller_assets)
+        write_nfts_to_file(
+            nfts=owner_and_seller_assets,
+            path=os.path.join(output_dir, slug, 'owner_and_seller_nfts.csv'),
+            fieldnames=api_client.nft_fields,
+        )
 
         # get the transaction history for the collection owners
         owner_transactions = list()
-        with ThreadPoolExecutor(max_workers=MAX_PARALLEL_REQUESTS) as executor:
+        with ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
             for wallet in col_owners:
                 executor.submit(
                     get_wallet_transactions,
@@ -172,4 +173,5 @@ def get_and_write_data(
         write_transactions_to_file(
             transactions=owner_transactions,
             path=os.path.join(output_dir, slug, 'owner_transactions.csv'),
+            fieldnames=api_client.transaction_fields,
         )

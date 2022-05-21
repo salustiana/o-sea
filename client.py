@@ -12,58 +12,91 @@ class ApiClient:
     API_URL = "https://api.opensea.io/api/v1/"
     ASSETS_URL = API_URL + "assets/"
     EVENTS_URL = API_URL + "events/"
+    transaction_fields = [
+        "asset_url",
+        "image_url",
+        "contract_address",
+        "token_id",
+        "collection",
+        "seller",
+        "buyer",
+        "price",
+        "coin",
+        "price_usd",
+        "timestamp",
+    ]
+    nft_fields = [
+        "asset_url",
+        "image_url",
+        "contract_address",
+        "token_id",
+        "collection",
+    ]
+
 
     def __init__(self, api_key):
         self.api_key = api_key
         self.s = requests.Session()
         self.s.headers.update({"X-API-KEY": self.api_key})
-        self.last_req = None
+        self.timeout = 4
 
     @sleep_and_retry
-    @limits(calls=4, period=2)
+    @limits(calls=3, period=1)
     def _get(self, *args, **kwargs):
         r = self.s.get(*args, **kwargs)
         while r.status_code == 429:
-            print(f"API returned 429 for {kwargs['url']}. Sleeping for 1 second")
-            time.sleep(1)
+            print(f"429. Sleeping for {self.timeout} seconds")
+            time.sleep(self.timeout)
+            self.timeout += 4
             r = self.s.get(*args, **kwargs)
         if r.status_code != 200:
             raise OSAPIError(f"API returned {r.status_code} for {kwargs['url']}")
+        if self.timeout > 4:
+            self.timeout -= 4
         return r
 
     def parse_transaction(self, event):
         transaction = {
-            "asset_url": None,
-            "contract_address": None,
-            "token_id": None,
-            "collection": None,
-            "seller": None,
-            "buyer": None,
-            "price": None,
-            "coin": None,
-            "price_usd": None,
-            "timestamp": None,
+            field: None for field in self.transaction_fields
         }
-        decimals = int(event["payment_token"]["decimals"])
+
         total_price = int(event["total_price"])
-        price = total_price/(10**decimals)
-        usd_value = float(event["payment_token"]["usd_price"])
+        if event["payment_token"]:
+            decimals = int(event["payment_token"]["decimals"])
+            price = total_price/(10**decimals)
+            usd_value = float(event["payment_token"]["usd_price"])
+            transaction["coin"] = event["payment_token"]["symbol"]
+            transaction["price"] = price
+            transaction["price_usd"] = price*usd_value
 
         transaction["seller"] = event["seller"]["address"]
-        transaction["buyer"] = event["transaction"]["from_account"]["address"]
         transaction["timestamp"] = event["transaction"]["timestamp"]
-        transaction["coin"] = event["payment_token"]["symbol"]
+        if event["transaction"]["from_account"]:
+            transaction["buyer"] = event["transaction"]["from_account"]["address"]
 
-        transaction["price"] = price
-        transaction["price_usd"] = price*usd_value
         if event["asset"]:
             transaction["asset_url"] = event["asset"]["permalink"]
+            transaction["image_url"] = event["asset"]["image_url"]
             transaction["token_id"] = event["asset"]["token_id"]
             transaction["contract_address"] = event["asset"]["asset_contract"]["address"]
             if event["asset"]["collection"]:
                 transaction["collection"] = event["asset"]["collection"]["slug"]
 
         return transaction
+
+    def parse_nft(self, asset):
+        nft = {
+            field: None for field in self.nft_fields
+        }
+
+        nft["asset_url"] = asset["permalink"]
+        nft["image_url"] = asset["image_url"]
+        nft["token_id"] = asset["token_id"]
+        nft["contract_address"] = asset["asset_contract"]["address"]
+        if asset["collection"]:
+            nft["collection"] = asset["collection"]["slug"]
+
+        return nft
 
     def get_collection_owners(self, slug, limit_requests=1):
         owners = list()
@@ -74,8 +107,8 @@ class ApiClient:
         }
 
         req_n = 1
-        print(f"Getting owners for {slug} Request number {req_n} cursor: {params['cursor']}")
         r = self._get(url=self.ASSETS_URL, params=params)
+        print(f"Got owners for {slug} Request number {req_n} cursor: {params['cursor']}")
         r_json = r.json()
         params["cursor"] = r_json["next"]
 
@@ -84,9 +117,9 @@ class ApiClient:
 
         while params["cursor"] and (limit_requests == None or req_n < limit_requests):
             req_n += 1
-            print(f"Getting owners for {slug} Request number {req_n} cursor: {params['cursor']}")
             try:
                 r = self._get(url=self.ASSETS_URL, params=params)
+                print(f"Got owners for {slug} Request number {req_n} cursor: {params['cursor']}")
             except OSAPIError as e:
                 print(e)
                 return owners
@@ -100,7 +133,7 @@ class ApiClient:
         return owners
 
     def get_wallet_transactions(self, wallet, limit_requests=1):
-        # return if the wallet is default null address
+        # skip default (null) wallet
         if wallet == "0x0000000000000000000000000000000000000000":
             return
 
@@ -113,8 +146,8 @@ class ApiClient:
         }
 
         req_n = 1
-        print(f"Getting transactions for {wallet} Request number {req_n} cursor: {params['cursor']}")
         r = self._get(url=self.EVENTS_URL, params=params)
+        print(f"Got transactions for {wallet} Request number {req_n} cursor: {params['cursor']}")
         r_json = r.json()
         params["cursor"] = r_json["next"]
 
@@ -125,9 +158,9 @@ class ApiClient:
 
         while params["cursor"] and (limit_requests == None or req_n < limit_requests):
             req_n += 1
-            print(f"Getting transactions for {wallet} Request number {req_n} cursor: {params['cursor']}")
             try:
                 r = self._get(url=self.EVENTS_URL, params=params)
+                print(f"Got transactions for {wallet} Request number {req_n} cursor: {params['cursor']}")
             except OSAPIError as e:
                 print(e)
                 return transactions
@@ -152,8 +185,8 @@ class ApiClient:
         }
 
         req_n = 1
-        print(f"Getting sales for {slug} Request number {req_n} cursor: {params['cursor']}")
         r = self._get(url=self.EVENTS_URL, params=params)
+        print(f"Got sales for {slug} Request number {req_n} cursor: {params['cursor']}")
         r_json = r.json()
         params["cursor"] = r_json["next"]
 
@@ -164,9 +197,9 @@ class ApiClient:
 
         while params["cursor"] and (limit_requests == None or req_n < limit_requests):
             req_n += 1
-            print(f"Getting sales for {slug} Request number {req_n} cursor: {params['cursor']}")
             try:
                 r = self._get(url=self.EVENTS_URL, params=params)
+                print(f"Got sales for {slug} Request number {req_n} cursor: {params['cursor']}")
             except OSAPIError as e:
                 print(e)
                 return sales
@@ -182,7 +215,7 @@ class ApiClient:
         return sales
 
     def get_wallet_assets(self, wallet, limit_requests=1):
-        # return if the wallet is default null address
+        # skip default (null) wallet
         if wallet == "0x0000000000000000000000000000000000000000":
             return
 
@@ -194,27 +227,21 @@ class ApiClient:
         }
 
         req_n = 1
-        print(f"Getting assets for {wallet} Request number {req_n} cursor: {params['cursor']}")
         r = self._get(url=self.ASSETS_URL, params=params)
+        print(f"Got assets for {wallet} Request number {req_n} cursor: {params['cursor']}")
         r_json = r.json()
         params["cursor"] = r_json["next"]
 
         for asset in r_json["assets"]:
-            nft = {
-                "contract_address": None, "token_id": None, "collection": None,
-            }
-            nft["token_id"] = asset["token_id"]
-            nft["contract_address"] = asset["asset_contract"]["address"]
-            if asset["collection"]:
-                nft["collection"] = asset["collection"]["slug"]
-
-            nfts.append(nft)
+            nfts.append(
+                self.parse_nft(asset)
+            )
 
         while params["cursor"] and (limit_requests == None or req_n < limit_requests):
             req_n += 1
-            print(f"Getting assets for {wallet} Request number {req_n} cursor: {params['cursor']}")
             try:
                 r = self._get(url=self.ASSETS_URL, params=params)
+                print(f"Got assets for {wallet} Request number {req_n} cursor: {params['cursor']}")
             except OSAPIError as e:
                 print(e)
                 return nfts
@@ -223,15 +250,8 @@ class ApiClient:
                 params["cursor"] = r_json["next"]
 
                 for asset in r_json["assets"]:
-                    nft = {
-                        "contract_address": None, "token_id": None, "collection": None,
-                    }
-                    nft["token_id"] = asset["token_id"]
-                    nft["contract_address"] = asset["asset_contract"]["address"]
-                    if asset["collection"]:
-                        nft["collection"] = asset["collection"]["slug"]
-
-                    nfts.append(nft)
+                    nfts.append(
+                        self.parse_nft(asset)
+                    )
 
         return nfts
-
