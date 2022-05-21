@@ -98,6 +98,10 @@ def get_and_write_data(
         os.makedirs(os.path.join(output_dir, slug), exist_ok=True)
 
         # write csv headers
+        with open(os.path.join(output_dir, slug, 'info.csv'), 'w') as f:
+            info_writer = csv.DictWriter(f, fieldnames=api_client.col_fields)
+            info_writer.writeheader()
+
         with open(os.path.join(output_dir, slug, 'collection_sales.csv'), 'w') as f:
             tr_writer = csv.DictWriter(f, fieldnames=api_client.transaction_fields)
             tr_writer.writeheader()
@@ -109,6 +113,13 @@ def get_and_write_data(
         with open(os.path.join(output_dir, slug, 'owner_and_seller_nfts.csv'), 'w') as f:
             nft_writer = csv.DictWriter(f, fieldnames=api_client.nft_fields)
             nft_writer.writeheader()
+
+        # get info for this collection
+        col_info = api_client.get_collection_info(slug)
+        # write info to csv file
+        with open(os.path.join(output_dir, slug, 'info.csv'), 'a') as f:
+            info_writer = csv.DictWriter(f, fieldnames=api_client.col_fields)
+            info_writer.writerow(col_info)
 
         # get a list of owners for this collection
         # remove duplicate owners, if any

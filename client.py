@@ -12,6 +12,7 @@ class ApiClient:
     API_URL = "https://api.opensea.io/api/v1/"
     ASSETS_URL = API_URL + "assets/"
     EVENTS_URL = API_URL + "events/"
+    COLLECTION_URL = API_URL + "collection/"
     transaction_fields = [
         "asset_url",
         "image_url",
@@ -32,7 +33,29 @@ class ApiClient:
         "token_id",
         "collection",
     ]
-
+    col_fields = [
+        "one_day_volume",
+        "one_day_change",
+        "one_day_sales",
+        "one_day_average_price",
+        "seven_day_volume",
+        "seven_day_change",
+        "seven_day_sales",
+        "seven_day_average_price",
+        "thirty_day_volume",
+        "thirty_day_change",
+        "thirty_day_sales",
+        "thirty_day_average_price",
+        "total_volume",
+        "total_sales",
+        "total_supply",
+        "count",
+        "num_owners",
+        "average_price",
+        "num_reports",
+        "market_cap",
+        "floor_price",
+    ]
 
     def __init__(self, api_key):
         self.api_key = api_key
@@ -84,6 +107,37 @@ class ApiClient:
 
         return transaction
 
+    def parse_col_info(self, col_json):
+        col_info = {
+            field: None for field in self.col_fields
+        }
+
+        stats = col_json["stats"]
+
+        col_info["one_day_volume"] = stats["one_day_volume"]
+        col_info["one_day_change"] = stats["one_day_change"]
+        col_info["one_day_sales"] = stats["one_day_sales"]
+        col_info["one_day_average_price"] = stats["one_day_average_price"]
+        col_info["seven_day_volume"] = stats["seven_day_volume"]
+        col_info["seven_day_change"] = stats["seven_day_change"]
+        col_info["seven_day_sales"] = stats["seven_day_sales"]
+        col_info["seven_day_average_price"] = stats["seven_day_average_price"]
+        col_info["thirty_day_volume"] = stats["thirty_day_volume"]
+        col_info["thirty_day_change"] = stats["thirty_day_change"]
+        col_info["thirty_day_sales"] = stats["thirty_day_sales"]
+        col_info["thirty_day_average_price"] = stats["thirty_day_average_price"]
+        col_info["total_volume"] = stats["total_volume"]
+        col_info["total_sales"] = stats["total_sales"]
+        col_info["total_supply"] = stats["total_supply"]
+        col_info["count"] = stats["count"]
+        col_info["num_owners"] = stats["num_owners"]
+        col_info["average_price"] = stats["average_price"]
+        col_info["num_reports"] = stats["num_reports"]
+        col_info["market_cap"] = stats["market_cap"]
+        col_info["floor_price"] = stats["floor_price"]
+
+        return col_info
+
     def parse_nft(self, asset):
         nft = {
             field: None for field in self.nft_fields
@@ -97,6 +151,14 @@ class ApiClient:
             nft["collection"] = asset["collection"]["slug"]
 
         return nft
+
+    def get_collection_info(self, slug):
+        r = self._get(url=self.COLLECTION_URL+slug)
+        print(f"Got info for {slug}")
+        r_json = r.json()
+        col_json = r_json["collection"]
+
+        return self.parse_col_info(col_json)
 
     def get_collection_owners(self, slug, limit_requests=1):
         owners = list()
