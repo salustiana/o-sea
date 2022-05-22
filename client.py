@@ -9,6 +9,7 @@ class OSAPIError(Exception):
 
 
 class ApiClient:
+    RATE = 4
     API_URL = "https://api.opensea.io/api/v1/"
     ASSETS_URL = API_URL + "assets/"
     EVENTS_URL = API_URL + "events/"
@@ -64,7 +65,7 @@ class ApiClient:
         self.timeout = 4
 
     @sleep_and_retry
-    @limits(calls=3, period=1)
+    @limits(calls=RATE, period=1)
     def _get(self, *args, **kwargs):
         r = self.s.get(*args, **kwargs)
         while r.status_code == 429:

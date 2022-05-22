@@ -3,8 +3,6 @@ import csv
 from client import ApiClient
 from concurrent.futures import ThreadPoolExecutor
 
-MAX_THREADS = 4
-
 def get_owners(slug, api_client, limit_requests=1):
     try:
         col_owners = api_client.get_collection_owners(
@@ -151,7 +149,7 @@ def get_and_write_data(
         # for these sellers and owners,
         # get a list of their nfts
         owner_and_seller_assets = list()
-        with ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
+        with ThreadPoolExecutor(max_workers=api_client.RATE) as executor:
             for wallet in owners_and_sellers:
                 executor.submit(
                     get_wallet_assets,
@@ -171,7 +169,7 @@ def get_and_write_data(
 
         # get the transaction history for the collection owners
         owner_transactions = list()
-        with ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
+        with ThreadPoolExecutor(max_workers=api_client.RATE) as executor:
             for wallet in col_owners:
                 executor.submit(
                     get_wallet_transactions,
