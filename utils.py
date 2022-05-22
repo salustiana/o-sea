@@ -1,13 +1,18 @@
 import os
 import csv
+import time
 from client import ApiClient
 from concurrent.futures import ThreadPoolExecutor
 
+THREAD_OFFSET = 0.5
+
 def get_owners(slug, api_client, limit_requests=1):
     try:
-        col_owners = api_client.get_collection_owners(
-            slug, limit_requests=limit_requests,
-        )
+        col_owners = [
+            data["owner"] for data in api_client.get_col_assets_data(
+                slug, limit_requests=limit_requests,
+            )
+        ]
     except Exception as e:
         print(f"slug: {slug}")
         print(e)
@@ -96,19 +101,19 @@ def get_and_write_data(
         os.makedirs(os.path.join(output_dir, slug), exist_ok=True)
 
         # write csv headers
-        with open(os.path.join(output_dir, slug, 'info.csv'), 'w') as f:
+        with open(os.path.join(output_dir, slug, 'info.csv'), 'a') as f:
             info_writer = csv.DictWriter(f, fieldnames=api_client.col_fields)
             info_writer.writeheader()
 
-        with open(os.path.join(output_dir, slug, 'collection_sales.csv'), 'w') as f:
+        with open(os.path.join(output_dir, slug, 'collection_sales.csv'), 'a') as f:
             tr_writer = csv.DictWriter(f, fieldnames=api_client.transaction_fields)
             tr_writer.writeheader()
 
-        with open(os.path.join(output_dir, slug, 'owner_transactions.csv'), 'w') as f:
+        with open(os.path.join(output_dir, slug, 'owner_transactions.csv'), 'a') as f:
             tr_writer = csv.DictWriter(f, fieldnames=api_client.transaction_fields)
             tr_writer.writeheader()
 
-        with open(os.path.join(output_dir, slug, 'owner_and_seller_nfts.csv'), 'w') as f:
+        with open(os.path.join(output_dir, slug, 'owner_and_seller_nfts.csv'), 'a') as f:
             nft_writer = csv.DictWriter(f, fieldnames=api_client.nft_fields)
             nft_writer.writeheader()
 
@@ -151,6 +156,7 @@ def get_and_write_data(
         owner_and_seller_assets = list()
         with ThreadPoolExecutor(max_workers=api_client.RATE) as executor:
             for wallet in owners_and_sellers:
+                time.sleep(THREAD_OFFSET)
                 executor.submit(
                     get_wallet_assets,
                     wallet=wallet,
@@ -171,6 +177,7 @@ def get_and_write_data(
         owner_transactions = list()
         with ThreadPoolExecutor(max_workers=api_client.RATE) as executor:
             for wallet in col_owners:
+                time.sleep(THREAD_OFFSET)
                 executor.submit(
                     get_wallet_transactions,
                     wallet=wallet,
