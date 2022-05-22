@@ -6,51 +6,25 @@ from concurrent.futures import ThreadPoolExecutor
 
 THREAD_OFFSET = 0.5
 
-def get_owners(slug, api_client, limit_requests=1):
-    try:
-        col_owners = [
-            data["owner"] for data in api_client.get_col_assets_data(
-                slug, limit_requests=limit_requests,
-            )
-        ]
-    except Exception as e:
-        print(f"slug: {slug}")
-        print(e)
-    else:
-        return col_owners
-
-def get_wallet_assets(wallet, api_client, output_list, limit_requests=1):
-    try:
-        wal_assets = api_client.get_wallet_assets(
-            wallet, limit_requests=limit_requests,
+def save_wallet_assets(wallet, api_client, file_path, limit_requests=1):
+    for assets_list in api_client.get_wallet_assets(
+        wallet, limit_requests=limit_requests
+    ):
+        write_nfts_to_file(
+            nfts=assets_list,
+            path=file_path,
+            fieldnames=api_client.nft_fields,
         )
-    except Exception as e:
-        print(f"wallet: {wallet}")
-        print(e)
-    else:
-        output_list.extend(wal_assets)
 
-def get_wallet_transactions(wallet, api_client, output_list, limit_requests=1):
-    try:
-        wal_hist = api_client.get_wallet_transactions(
-            wallet, limit_requests=limit_requests,
+def save_wallet_transactions(wallet, api_client, file_path, limit_requests=1):
+    for wal_hist_list in api_client.get_wallet_transactions(
+        wallet, limit_requests=limit_requests
+    ):
+        write_transactions_to_file(
+            transactions=wal_hist_list,
+            path=file_path,
+            fieldnames=api_client.transaction_fields,
         )
-    except Exception as e:
-        print(f"wallet: {wallet}")
-        print(e)
-    else:
-        output_list.extend(wal_hist)
-
-def get_collection_sales(slug, api_client, output_list, limit_requests=1):
-    try:
-        col_sales = api_client.get_collection_sales(
-            slug, limit_requests=limit_requests,
-        )
-    except Exception as e:
-        print(f"slug: {slug}")
-        print(e)
-    else:
-        output_list.extend(col_sales)
 
 def write_transactions_to_file(transactions, path, fieldnames):
     with open(path, 'a') as f:
@@ -65,7 +39,7 @@ def write_nfts_to_file(nfts, path, fieldnames):
 def get_and_write_data(
     api_key,
     slugs,
-    get_owners_request_limit=1,
+    get_collection_nfts_request_limit=1,
     get_wallet_transactions_request_limit=1,
     get_wallet_nfts_request_limit=1,
     get_collection_sales_request_limit=1,
@@ -99,95 +73,97 @@ def get_and_write_data(
 
     for slug in slugs:
         os.makedirs(os.path.join(output_dir, slug), exist_ok=True)
+        info_path = os.path.join(output_dir, slug, 'info.csv')
+        nft_data_path = os.path.join(output_dir, slug, 'nft_data.csv')
+        collection_sales_path = os.path.join(output_dir, slug, 'collection_sales.csv')
+        owner_transactions_path = os.path.join(output_dir, slug, 'owner_transactions.csv')
+        owner_and_seller_nfts_path = os.path.join(output_dir, slug, 'owner_and_seller_nfts.csv')
 
         # write csv headers
-        with open(os.path.join(output_dir, slug, 'info.csv'), 'a') as f:
+        with open(info_path, 'a') as f:
             info_writer = csv.DictWriter(f, fieldnames=api_client.col_fields)
             info_writer.writeheader()
 
-        with open(os.path.join(output_dir, slug, 'collection_sales.csv'), 'a') as f:
+        with open(nft_data_path, 'a') as f:
+            data_writer = csv.DictWriter(f, fieldnames=api_client.data_fields)
+            data_writer.writeheader()
+
+        with open(collection_sales_path, 'a') as f:
             tr_writer = csv.DictWriter(f, fieldnames=api_client.transaction_fields)
             tr_writer.writeheader()
 
-        with open(os.path.join(output_dir, slug, 'owner_transactions.csv'), 'a') as f:
+        with open(owner_transactions_path, 'a') as f:
             tr_writer = csv.DictWriter(f, fieldnames=api_client.transaction_fields)
             tr_writer.writeheader()
 
-        with open(os.path.join(output_dir, slug, 'owner_and_seller_nfts.csv'), 'a') as f:
+        with open(owner_and_seller_nfts_path, 'a') as f:
             nft_writer = csv.DictWriter(f, fieldnames=api_client.nft_fields)
             nft_writer.writeheader()
 
         # get info for this collection
         col_info = api_client.get_collection_info(slug)
         # write info to csv file
-        with open(os.path.join(output_dir, slug, 'info.csv'), 'a') as f:
+        with open(info_path, 'a') as f:
             info_writer = csv.DictWriter(f, fieldnames=api_client.col_fields)
             info_writer.writerow(col_info)
 
+        # save a list of nft data for this collection
+        with open(nft_data_path, 'a') as f:
+            data_writer = csv.DictWriter(f, fieldnames=api_client.data_fields)
+            for data_list in api_client.get_col_assets_data(
+                slug, limit_requests=get_collection_nfts_request_limit
+            ):
+                data_writer.writerows(data_list)
+
+        # get and write the collection sales to a csv file
+        for sales_list in api_client.get_collection_sales(
+            slug, limit_requests=get_collection_sales_request_limit
+        ):
+            write_transactions_to_file(
+                transactions=sales_list,
+                path=collection_sales_path,
+                fieldnames=api_client.transaction_fields,
+            )
+
         # get a list of owners for this collection
         # remove duplicate owners, if any
-        col_owners = list(set(get_owners(
-            slug,
-            api_client=api_client,
-            limit_requests=get_owners_request_limit,
-        )))
+        col_owners = set()
+        with open(nft_data_path, 'r') as f:
+            data_reader = csv.DictReader(f)
+            for line in data_reader:
+                col_owners.add(line["owner"])
 
-        # get the sales referring to this collection
-        col_sales = list()
-        get_collection_sales(
-            slug,
-            api_client=api_client,
-            output_list=col_sales,
-            limit_requests=get_collection_sales_request_limit,
-        )
-        # write the collection sales to a csv file
-        write_transactions_to_file(
-            transactions=col_sales,
-            path=os.path.join(output_dir, slug, 'collection_sales.csv'),
-            fieldnames=api_client.transaction_fields,
-        )
+        # add the sellers from sales file
+        owners_and_sellers = col_owners.copy()
+        with open(collection_sales_path, 'r') as f:
+            sales_reader = csv.DictReader(f)
+            for line in sales_reader:
+                owners_and_sellers.add(line["seller"])
 
-        # get the sellers from the previous list
-        sellers = [sale["seller"] for sale in col_sales]
-        owners_and_sellers = list(set(col_owners + sellers))
-
-        # for these sellers and owners,
-        # get a list of their nfts
-        owner_and_seller_assets = list()
+        # for these sellers and owners, get a list
+        # of their nfts and save them to a csv file
         with ThreadPoolExecutor(max_workers=api_client.RATE) as executor:
             for wallet in owners_and_sellers:
+                # offset the threads
                 time.sleep(THREAD_OFFSET)
                 executor.submit(
-                    get_wallet_assets,
+                    save_wallet_assets,
                     wallet=wallet,
                     api_client=api_client,
                     limit_requests=get_wallet_nfts_request_limit,
-                    output_list=owner_and_seller_assets,
+                    file_path=owner_and_seller_nfts_path,
                 )
 
-
-        # write those nfts to a csv file
-        write_nfts_to_file(
-            nfts=owner_and_seller_assets,
-            path=os.path.join(output_dir, slug, 'owner_and_seller_nfts.csv'),
-            fieldnames=api_client.nft_fields,
-        )
-
-        # get the transaction history for the collection owners
-        owner_transactions = list()
+        # get the transaction histories for the
+        # collection owners and save them to a csv file
         with ThreadPoolExecutor(max_workers=api_client.RATE) as executor:
             for wallet in col_owners:
+                # offset the threads
                 time.sleep(THREAD_OFFSET)
                 executor.submit(
-                    get_wallet_transactions,
+                    save_wallet_transactions,
                     wallet=wallet,
                     api_client=api_client,
                     limit_requests=get_wallet_transactions_request_limit,
-                    output_list=owner_transactions,
+                    file_path=owner_transactions_path,
                 )
-        # write those transactions to a csv file
-        write_transactions_to_file(
-            transactions=owner_transactions,
-            path=os.path.join(output_dir, slug, 'owner_transactions.csv'),
-            fieldnames=api_client.transaction_fields,
-        )

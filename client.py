@@ -5,7 +5,7 @@ from ratelimit import limits, sleep_and_retry
 class OSAPIError(Exception):
     pass
 
-""" API rate limit: 4/sec ??????"""
+""" API rate limit: 4/sec """
 
 
 class ApiClient:
@@ -14,6 +14,11 @@ class ApiClient:
     ASSETS_URL = API_URL + "assets/"
     EVENTS_URL = API_URL + "events/"
     COLLECTION_URL = API_URL + "collection/"
+    data_fields = [
+        "contract_address",
+        "token_id",
+        "owner",
+    ]
     transaction_fields = [
         "asset_url",
         "image_url",
@@ -167,171 +172,124 @@ class ApiClient:
         return self.parse_col_info(col_json)
 
     def get_col_assets_data(self, slug, limit_requests=1):
-        assets_data = list()
         params = {
             "cursor": None,
             "collection": slug,
             "limit": 50,
         }
-
         req_n = 1
-        r = self._get(url=self.ASSETS_URL, params=params)
-        print(f"Got data for {slug} assets Request number {req_n}")
-        r_json = r.json()
-        params["cursor"] = r_json["next"]
-
-        for asset in r_json["assets"]:
-            assets_data.append(
-                {
-                    "contr_addr": asset["asset_contract"]["address"],
-                    "token_id": asset["token_id"],
-                    "owner": asset["owner"]["address"],
-                }
-            )
-
-        while params["cursor"] and (limit_requests == None or req_n < limit_requests):
-            req_n += 1
+        first = True
+        while (first or params["cursor"]) and (
+            limit_requests == None or req_n <= limit_requests
+        ):
+            first = False
             try:
                 r = self._get(url=self.ASSETS_URL, params=params)
                 print(f"Got data for {slug} assets Request number {req_n}")
             except OSAPIError as e:
                 print(e)
-                return assets_data
+                return list()
             else:
                 r_json = r.json()
                 params["cursor"] = r_json["next"]
 
-            for asset in r_json["assets"]:
-                assets_data.append(
-                    {
-                        "contr_addr": asset["asset_contract"]["address"],
-                        "token_id": asset["token_id"],
-                        "owner": asset["owner"]["address"],
-                    }
-                )
-
-        return assets_data
+            req_n += 1
+            yield [
+                {
+                    "contract_address": asset["asset_contract"]["address"],
+                    "token_id": asset["token_id"],
+                    "owner": asset["owner"]["address"],
+                } for asset in r_json["assets"]
+            ]
 
     def get_wallet_transactions(self, wallet, limit_requests=1):
         # skip default (null) wallet
         if wallet == "0x0000000000000000000000000000000000000000":
-            return
-
-        transactions = list()
+            return list()
         params = {
             "cursor": None,
             "account_address": wallet,
             "event_type": "successful",
             "limit": 300,
         }
-
         req_n = 1
-        r = self._get(url=self.EVENTS_URL, params=params)
-        print(f"Got transactions for {wallet} Request number {req_n}")
-        r_json = r.json()
-        params["cursor"] = r_json["next"]
-
-        for event in r_json["asset_events"]:
-            transactions.append(
-                self.parse_transaction(event)
-            )
-
-        while params["cursor"] and (limit_requests == None or req_n < limit_requests):
-            req_n += 1
+        first = True
+        while (first or params["cursor"]) and (
+            limit_requests == None or req_n <= limit_requests
+        ):
+            first = False
             try:
                 r = self._get(url=self.EVENTS_URL, params=params)
                 print(f"Got transactions for {wallet} Request number {req_n}")
             except OSAPIError as e:
                 print(e)
-                return transactions
+                return list()
             else:
                 r_json = r.json()
                 params["cursor"] = r_json["next"]
 
-                for event in r_json["asset_events"]:
-                    transactions.append(
-                        self.parse_transaction(event)
-                    )
-
-        return transactions
+            req_n += 1
+            yield [
+                self.parse_transaction(event)
+                for event in r_json["asset_events"]
+            ]
 
     def get_collection_sales(self, slug, limit_requests=1):
-        sales = list()
         params = {
             "cursor": None,
             "collection_slug": slug,
             "event_type": "successful",
             "limit": 300,
         }
-
         req_n = 1
-        r = self._get(url=self.EVENTS_URL, params=params)
-        print(f"Got sales for {slug} Request number {req_n}")
-        r_json = r.json()
-        params["cursor"] = r_json["next"]
-
-        for event in r_json["asset_events"]:
-            sales.append(
-                self.parse_transaction(event)
-            )
-
-        while params["cursor"] and (limit_requests == None or req_n < limit_requests):
-            req_n += 1
+        first = True
+        while (first or params["cursor"]) and (
+            limit_requests == None or req_n <= limit_requests
+        ):
+            first = False
             try:
                 r = self._get(url=self.EVENTS_URL, params=params)
                 print(f"Got sales for {slug} Request number {req_n}")
             except OSAPIError as e:
                 print(e)
-                return sales
+                return list()
             else:
                 r_json = r.json()
                 params["cursor"] = r_json["next"]
 
-                for event in r_json["asset_events"]:
-                    sales.append(
-                        self.parse_transaction(event)
-                    )
-
-        return sales
+            req_n += 1
+            yield [
+                self.parse_transaction(event)
+                for event in r_json["asset_events"]
+            ]
 
     def get_wallet_assets(self, wallet, limit_requests=1):
         # skip default (null) wallet
         if wallet == "0x0000000000000000000000000000000000000000":
-            return
-
-        nfts = list()
+            return list()
         params = {
             "cursor": None,
             "owner": wallet,
             "limit": 50,
         }
-
         req_n = 1
-        r = self._get(url=self.ASSETS_URL, params=params)
-        print(f"Got assets for {wallet} Request number {req_n}")
-        r_json = r.json()
-        params["cursor"] = r_json["next"]
-
-        for asset in r_json["assets"]:
-            nfts.append(
-                self.parse_nft(asset)
-            )
-
-        while params["cursor"] and (limit_requests == None or req_n < limit_requests):
-            req_n += 1
+        first = True
+        while (first or params["cursor"]) and (
+            limit_requests == None or req_n <= limit_requests
+        ):
+            first = False
             try:
                 r = self._get(url=self.ASSETS_URL, params=params)
                 print(f"Got assets for {wallet} Request number {req_n}")
             except OSAPIError as e:
                 print(e)
-                return nfts
+                return list()
             else:
                 r_json = r.json()
                 params["cursor"] = r_json["next"]
 
-                for asset in r_json["assets"]:
-                    nfts.append(
-                        self.parse_nft(asset)
-                    )
-
-        return nfts
+            req_n += 1
+            yield [
+                self.parse_nft(asset)
+                for asset in r_json["assets"]
+            ]
