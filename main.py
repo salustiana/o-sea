@@ -3,17 +3,17 @@ from utils import get_and_write_data
 if __name__ == '__main__':
 
     slugs = [
-        "neotokyo-citizens"
+        "rtfkt-capsule-space-drip-1-2",
     ]
 
     get_and_write_data(
         api_key="",
         slugs=slugs,
-        get_owners_request_limit=1,
+        get_collection_sales_request_limit=1,
+        get_collection_nfts_request_limit=1,
         get_wallet_transactions_request_limit=1,
         get_wallet_nfts_request_limit=1,
-        get_collection_sales_request_limit=None,
-        output_dir='./d-results',
+        output_dir='./i-results',
     )
 
     """ This function performs all the requested data

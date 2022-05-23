@@ -1,40 +1,68 @@
 import os
 import csv
 import time
-from client import ApiClient
+from threading import RLock
 from concurrent.futures import ThreadPoolExecutor
 
+from client import ApiClient
+
 THREAD_OFFSET = 0.5
+rlock = RLock()
+
+def write_things_to_file(things, path, fieldnames):
+    with rlock:
+        with open(path, 'a') as f:
+            thing_writer = csv.DictWriter(f, fieldnames=fieldnames)
+            thing_writer.writerows(things)
 
 def save_wallet_assets(wallet, api_client, file_path, limit_requests=1):
-    for assets_list in api_client.get_wallet_assets(
-        wallet, limit_requests=limit_requests
-    ):
-        write_nfts_to_file(
-            nfts=assets_list,
-            path=file_path,
-            fieldnames=api_client.nft_fields,
-        )
+    try:
+        for assets_list in api_client.get_wallet_assets(
+            wallet, limit_requests=limit_requests
+        ):
+            write_things_to_file(
+                things=assets_list,
+                path=file_path,
+                fieldnames=api_client.nft_fields,
+            )
+    except Exception as e:
+        print(e)
 
 def save_wallet_transactions(wallet, api_client, file_path, limit_requests=1):
-    for wal_hist_list in api_client.get_wallet_transactions(
-        wallet, limit_requests=limit_requests
-    ):
-        write_transactions_to_file(
-            transactions=wal_hist_list,
-            path=file_path,
-            fieldnames=api_client.transaction_fields,
+    try:
+        for wal_hist_list in api_client.get_wallet_transactions(
+            wallet, limit_requests=limit_requests
+        ):
+            write_things_to_file(
+                things=wal_hist_list,
+                path=file_path,
+                fieldnames=api_client.transaction_fields,
+            )
+    except Exception as e:
+        print(e)
+
+def save_asset_listings(
+    contr_addr,
+    token_id,
+    asset_url,
+    image_url,
+    api_client,
+    file_path,
+):
+    try:
+        listings = api_client.get_asset_listings(
+            contr_addr, token_id
         )
-
-def write_transactions_to_file(transactions, path, fieldnames):
-    with open(path, 'a') as f:
-        tr_writer = csv.DictWriter(f, fieldnames=fieldnames)
-        tr_writer.writerows(transactions)
-
-def write_nfts_to_file(nfts, path, fieldnames):
-    with open(path, 'a') as f:
-        nft_writer = csv.DictWriter(f, fieldnames=fieldnames)
-        nft_writer.writerows(nfts)
+        for listing in listings:
+            listing["asset_url"] = asset_url
+            listing["image_url"] = image_url
+        write_things_to_file(
+            things=listings,
+            path=file_path,
+            fieldnames=api_client.listing_fields,
+        )
+    except Exception as e:
+        print(e)
 
 def get_and_write_data(
     api_key,
@@ -75,30 +103,23 @@ def get_and_write_data(
         os.makedirs(os.path.join(output_dir, slug), exist_ok=True)
         info_path = os.path.join(output_dir, slug, 'info.csv')
         nft_data_path = os.path.join(output_dir, slug, 'nft_data.csv')
+        listings_path = os.path.join(output_dir, slug, 'listings.csv')
         collection_sales_path = os.path.join(output_dir, slug, 'collection_sales.csv')
         owner_transactions_path = os.path.join(output_dir, slug, 'owner_transactions.csv')
         owner_and_seller_nfts_path = os.path.join(output_dir, slug, 'owner_and_seller_nfts.csv')
 
         # write csv headers
-        with open(info_path, 'a') as f:
-            info_writer = csv.DictWriter(f, fieldnames=api_client.col_fields)
-            info_writer.writeheader()
-
-        with open(nft_data_path, 'a') as f:
-            data_writer = csv.DictWriter(f, fieldnames=api_client.data_fields)
-            data_writer.writeheader()
-
-        with open(collection_sales_path, 'a') as f:
-            tr_writer = csv.DictWriter(f, fieldnames=api_client.transaction_fields)
-            tr_writer.writeheader()
-
-        with open(owner_transactions_path, 'a') as f:
-            tr_writer = csv.DictWriter(f, fieldnames=api_client.transaction_fields)
-            tr_writer.writeheader()
-
-        with open(owner_and_seller_nfts_path, 'a') as f:
-            nft_writer = csv.DictWriter(f, fieldnames=api_client.nft_fields)
-            nft_writer.writeheader()
+        for path, fields in [
+            (info_path, api_client.col_fields),
+            (nft_data_path, api_client.data_fields),
+            (listings_path, api_client.listing_fields),
+            (collection_sales_path, api_client.transaction_fields),
+            (owner_transactions_path, api_client.transaction_fields),
+            (owner_and_seller_nfts_path, api_client.nft_fields),
+        ]:
+            with open(path, 'a') as f:
+                thing_writer = csv.DictWriter(f, fieldnames=fields)
+                thing_writer.writeheader()
 
         # get info for this collection
         col_info = api_client.get_collection_info(slug)
@@ -115,12 +136,42 @@ def get_and_write_data(
             ):
                 data_writer.writerows(data_list)
 
+        # get the list of nfts for this collection
+        assets = list()
+        with open(nft_data_path, 'r') as f:
+            data_reader = csv.DictReader(f)
+            for line in data_reader:
+                assets.append(
+                    {
+                        "asset_url": line["asset_url"],
+                        "image_url": line["image_url"],
+                        "contract_address": line["contract_address"],
+                        "token_id": line["token_id"],
+                    }
+                )
+
+        # get the listings for the
+        # collection nfts and save them to a csv file
+        with ThreadPoolExecutor(max_workers=api_client.RATE) as executor:
+            for asset in assets:
+                # offset the threads
+                time.sleep(THREAD_OFFSET)
+                executor.submit(
+                    save_asset_listings,
+                    contr_addr=asset["contract_address"],
+                    token_id=asset["token_id"],
+                    asset_url=asset["asset_url"],
+                    image_url=asset["image_url"],
+                    api_client=api_client,
+                    file_path=listings_path,
+                )
+
         # get and write the collection sales to a csv file
         for sales_list in api_client.get_collection_sales(
             slug, limit_requests=get_collection_sales_request_limit
         ):
-            write_transactions_to_file(
-                transactions=sales_list,
+            write_things_to_file(
+                things=sales_list,
                 path=collection_sales_path,
                 fieldnames=api_client.transaction_fields,
             )

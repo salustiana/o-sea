@@ -12,9 +12,12 @@ class ApiClient:
     RATE = 4
     API_URL = "https://api.opensea.io/api/v1/"
     ASSETS_URL = API_URL + "assets/"
+    ASSET_URL_TEMPLATE = API_URL + "asset/{}/{}/listings"
     EVENTS_URL = API_URL + "events/"
     COLLECTION_URL = API_URL + "collection/"
     data_fields = [
+        "asset_url",
+        "image_url",
         "contract_address",
         "token_id",
         "owner",
@@ -38,6 +41,20 @@ class ApiClient:
         "contract_address",
         "token_id",
         "collection",
+    ]
+    listing_fields = [
+        "asset_url",
+        "image_url",
+        "contract_address",
+        "token_id",
+        "created_date",
+        "closing_date",
+        "maker",
+        "taker",
+        "current_price",
+        "current_bounty",
+        "coin",
+        "current_price_usd",
     ]
     col_fields = [
         "one_day_volume",
@@ -89,24 +106,54 @@ class ApiClient:
             self.timeout -= 4
         return r
 
+    def parse_listing(self, listing):
+        res = {
+            field: None for field in self.listing_fields
+        }
+
+        base_price = int(listing["base_price"])
+        if listing["payment_token_contract"]:
+            decimals = int(listing["payment_token_contract"]["decimals"])
+            current_price = base_price/(10**decimals)
+            usd_value = float(listing["payment_token_contract"]["usd_price"])
+            res["coin"] = listing["payment_token_contract"]["symbol"]
+            res["current_price"] = current_price
+            res["current_bounty"] = current_price*float(
+                listing["bounty_multiple"]
+            )
+            res["current_price_usd"] = current_price*usd_value
+
+        res["created_date"] = listing["created_date"]
+        res["closing_date"] = listing["closing_date"]
+        if listing["maker"]:
+            res["maker"] = listing["maker"]["address"]
+        if listing["taker"]:
+            res["taker"] = listing["taker"]["address"]
+
+        return res
+
     def parse_transaction(self, event):
         transaction = {
             field: None for field in self.transaction_fields
         }
 
-        total_price = int(event["total_price"])
-        if event["payment_token"]:
+        if event["total_price"]:
+            total_price = int(event["total_price"])
+        if event["payment_token"] and total_price != None:
             decimals = int(event["payment_token"]["decimals"])
             price = total_price/(10**decimals)
-            usd_value = float(event["payment_token"]["usd_price"])
             transaction["coin"] = event["payment_token"]["symbol"]
             transaction["price"] = price
-            transaction["price_usd"] = price*usd_value
+            if event["payment_token"]["usd_price"]:
+                usd_value = float(event["payment_token"]["usd_price"])
+                transaction["price_usd"] = price*usd_value
 
-        transaction["seller"] = event["seller"]["address"]
-        transaction["timestamp"] = event["transaction"]["timestamp"]
-        if event["transaction"]["from_account"]:
-            transaction["buyer"] = event["transaction"]["from_account"]["address"]
+        if event["seller"]:
+            transaction["seller"] = event["seller"]["address"]
+        if event["transaction"]:
+            transaction["timestamp"] = event["transaction"]["timestamp"]
+            if event["transaction"]["from_account"]:
+                transaction["buyer"] = event["transaction"]["from_account"]["address"]
 
         if event["asset"]:
             transaction["asset_url"] = event["asset"]["permalink"]
@@ -189,13 +236,13 @@ class ApiClient:
             except OSAPIError as e:
                 print(e)
                 return list()
-            else:
-                r_json = r.json()
-                params["cursor"] = r_json["next"]
-
+            r_json = r.json()
+            params["cursor"] = r_json["next"]
             req_n += 1
             yield [
                 {
+                    "asset_url": asset["permalink"],
+                    "image_url": asset["image_url"],
                     "contract_address": asset["asset_contract"]["address"],
                     "token_id": asset["token_id"],
                     "owner": asset["owner"]["address"],
@@ -224,10 +271,8 @@ class ApiClient:
             except OSAPIError as e:
                 print(e)
                 return list()
-            else:
-                r_json = r.json()
-                params["cursor"] = r_json["next"]
-
+            r_json = r.json()
+            params["cursor"] = r_json["next"]
             req_n += 1
             yield [
                 self.parse_transaction(event)
@@ -253,10 +298,8 @@ class ApiClient:
             except OSAPIError as e:
                 print(e)
                 return list()
-            else:
-                r_json = r.json()
-                params["cursor"] = r_json["next"]
-
+            r_json = r.json()
+            params["cursor"] = r_json["next"]
             req_n += 1
             yield [
                 self.parse_transaction(event)
@@ -284,12 +327,33 @@ class ApiClient:
             except OSAPIError as e:
                 print(e)
                 return list()
-            else:
-                r_json = r.json()
-                params["cursor"] = r_json["next"]
-
+            r_json = r.json()
+            params["cursor"] = r_json["next"]
             req_n += 1
             yield [
                 self.parse_nft(asset)
                 for asset in r_json["assets"]
             ]
+
+    def get_asset_listings(self, contr_addr, token_id):
+        params = {
+            "limit": 50,
+        }
+        try:
+            r = self._get(
+                url=self.ASSET_URL_TEMPLATE.format(contr_addr,token_id),
+                params=params
+            )
+            print(f"Got listings for {contr_addr} {token_id}")
+        except OSAPIError as e:
+            print(e)
+            return list()
+        r_json = r.json()
+        res = list()
+        for listing in r_json["listings"]:
+            lst = self.parse_listing(listing)
+            lst["contract_address"] = contr_addr
+            lst["token_id"] = token_id
+            res.append(lst)
+
+        return res
