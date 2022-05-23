@@ -68,6 +68,7 @@ def get_and_write_data(
     api_key,
     slugs,
     get_collection_nfts_request_limit=1,
+    get_listings_request_limit=1,
     get_wallet_transactions_request_limit=1,
     get_wallet_nfts_request_limit=1,
     get_collection_sales_request_limit=1,
@@ -77,10 +78,21 @@ def get_and_write_data(
     extraction, and writes the results to csv files
     within the specified output dir.
 
-    - get_owners_request_limit: limits the ammount of
-    requests performed when getting a list of owners
-    for a collection. 50 owners are returned for each
-    request.
+    All limits can be set to 0 to skip that data,
+    or to None to fetch everything available. Do this
+    with care, since collections can have up to 10k
+    nfts, and wallet_transactions and wallet_nfts
+    grow exponentially.
+
+    - get_collection_nfts_request_limit: limits the
+    ammount of requests performed when getting the list
+    of nfts for a collection. 50 nfts are returned
+    for each request.
+
+    - get_listings_request_limit: limits the
+    ammount of requests performed when getting the
+    listings for the collection nfts. Every request
+    fetches all active listings for an nft.
 
     - get_wallet_transactions_request_limit: limits
     the ammount of requests performed when getting a
@@ -96,7 +108,7 @@ def get_and_write_data(
     ammount of requests performed when getting a list
     of sales regarding a collection. 300 sales are
     returned for each request. """
-        
+
     api_client = ApiClient(api_key=api_key)
 
     for slug in slugs:
@@ -153,7 +165,9 @@ def get_and_write_data(
         # get the listings for the
         # collection nfts and save them to a csv file
         with ThreadPoolExecutor(max_workers=api_client.RATE) as executor:
-            for asset in assets:
+            for i, asset in enumerate(assets):
+                if i+1 > get_listings_request_limit:
+                    break
                 # offset the threads
                 time.sleep(THREAD_OFFSET)
                 executor.submit(
